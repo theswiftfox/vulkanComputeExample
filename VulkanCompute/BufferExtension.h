@@ -3,34 +3,60 @@
 #include <vulkan/vulkan.hpp>
 
 namespace vkExt {
+	struct SharedMemory {
+		vk::DeviceMemory memory;
+		vk::DeviceSize size;
+		void* mapped;
+		bool isMapped = false;
+		bool isAlive = true;
+
+		vk::Result map(vk::Device device, vk::DeviceSize offset, vk::MemoryMapFlags flags) {
+			if (isMapped) return vk::Result::eSuccess;
+			auto res = device.mapMemory(memory, offset, size, flags, &mapped);
+			if (res == vk::Result::eSuccess) isMapped = true;
+			return res;
+		}
+		void unmap(vk::Device device) {
+			if (!isMapped) return;
+			device.unmapMemory(memory);
+			mapped = nullptr;
+			isMapped = false;
+		}
+		void free(vk::Device device) {
+			if (!isAlive) return;
+			isAlive = false;
+			device.freeMemory(memory);
+		}
+	};
 
 	struct Buffer {
 		vk::Device device;
 		vk::Buffer buffer;
-		vk::DeviceMemory memory;
 		vk::DescriptorBufferInfo descriptor;
-		void* mapped;
-		bool isMapped = false;
+		uint32_t memoryOffset;
+		vkExt::SharedMemory* memory;
+		
+		void* mapped() {
+			if (!memory->isMapped) {
+				auto res = map();
+				if (res != vk::Result::eSuccess) return nullptr;
+			}
+			return (void*)((uint32_t *)(memory->mapped) + memoryOffset);
+		}
 
 		// Flags
 		vk::BufferUsageFlags usageFlags;
 
 		vk::Result map() {
-			auto res = device.mapMemory(memory, descriptor.offset, descriptor.range, vk::MemoryMapFlags(), &mapped);
-			if (res == vk::Result::eSuccess) isMapped = true;
-			return res;
+			return memory->map(device, descriptor.offset, vk::MemoryMapFlags());
 		}
 
 		void unmap() {
-			if (isMapped) {
-				device.unmapMemory(memory);
-				mapped = nullptr;
-				isMapped = false;
-			}
+			memory->unmap(device);
 		}
 
 		void bind(vk::DeviceSize offset = 0) {
-			device.bindBufferMemory(buffer, memory, offset);
+			device.bindBufferMemory(buffer, memory->memory, offset);
 		}
 
 		void setupDescriptor(vk::DeviceSize size = VK_WHOLE_SIZE, vk::DeviceSize offset = 0) {
@@ -40,13 +66,13 @@ namespace vkExt {
 		}
 
 		void copyTo(void* data, vk::DeviceSize size) {
-			assert(mapped);
-			memcpy(mapped, data, (size_t)size);
+			assert(memory->mapped);
+			memcpy(memory->mapped, data, (size_t)size);
 		}
 
 		vk::Result flush() {
 			vk::MappedMemoryRange mappedRange = vk::MappedMemoryRange()
-				.setMemory(memory)
+				.setMemory(memory->memory)
 				.setOffset(descriptor.offset)
 				.setSize(descriptor.range);
 			return device.flushMappedMemoryRanges(1, &mappedRange);
@@ -54,7 +80,7 @@ namespace vkExt {
 
 		vk::Result invalidate() {
 			vk::MappedMemoryRange mappedRange = vk::MappedMemoryRange()
-				.setMemory(memory)
+				.setMemory(memory->memory)
 				.setOffset(descriptor.offset)
 				.setSize(descriptor.range);
 			return device.invalidateMappedMemoryRanges(1, &mappedRange);
@@ -66,7 +92,7 @@ namespace vkExt {
 				device.destroyBuffer(buffer);
 			}
 			if (freeMem) {
-				device.freeMemory(memory);
+				memory->free(device);
 			}
 		}
 	};

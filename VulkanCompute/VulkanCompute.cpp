@@ -116,6 +116,9 @@ vk::Result VulkanComputeApplication::createBuffers() {
 		TRACE_FULL("unable to allocate memory for buffers");
 		return vk::Result::eErrorInitializationFailed;
 	}
+	
+	m_sharedBufferMemory.memory = m_valuesBufferMemory;
+	m_sharedBufferMemory.size = m_memorySize;
 
 	vk::BufferCreateInfo bufferCreateInfo = vk::BufferCreateInfo()
 		.setSize(m_bufferSize)
@@ -131,9 +134,10 @@ vk::Result VulkanComputeApplication::createBuffers() {
 	}
 	m_device.bindBufferMemory(m_inputBufferA.buffer, m_valuesBufferMemory, 0);
 	m_inputBufferA.device = m_device;
-	m_inputBufferA.memory = m_valuesBufferMemory;
+	m_inputBufferA.memory = &m_sharedBufferMemory;
 	m_inputBufferA.usageFlags = bufferCreateInfo.usage;
 	m_inputBufferA.setupDescriptor(m_bufferSize);
+	m_inputBufferA.memoryOffset = 0;
 
 	m_inputBufferB.buffer = m_device.createBuffer(bufferCreateInfo);
 	if (!m_inputBufferB.buffer) {
@@ -142,9 +146,10 @@ vk::Result VulkanComputeApplication::createBuffers() {
 	}
 	m_device.bindBufferMemory(m_inputBufferB.buffer, m_valuesBufferMemory, m_bufferSize);
 	m_inputBufferB.device = m_device;
-	m_inputBufferB.memory = m_valuesBufferMemory;
+	m_inputBufferB.memory = &m_sharedBufferMemory;
 	m_inputBufferB.usageFlags = bufferCreateInfo.usage;
 	m_inputBufferB.setupDescriptor(m_bufferSize);
+	m_inputBufferB.memoryOffset = m_numElements;
 
 	m_outputBuffer.buffer = m_device.createBuffer(bufferCreateInfo);
 	if (!m_outputBuffer.buffer) {
@@ -153,23 +158,23 @@ vk::Result VulkanComputeApplication::createBuffers() {
 	}
 	m_device.bindBufferMemory(m_outputBuffer.buffer, m_valuesBufferMemory, m_outputOffset);
 	m_outputBuffer.device = m_device;
-	m_outputBuffer.memory = m_valuesBufferMemory;
+	m_outputBuffer.memory = &m_sharedBufferMemory;
 	m_outputBuffer.usageFlags = bufferCreateInfo.usage;
 	m_outputBuffer.setupDescriptor(m_bufferSize);
+	m_outputBuffer.memoryOffset = m_numElements * 2;
 
 	return vk::Result::eSuccess;
 }
 
 vk::Result VulkanComputeApplication::createPipeline() {
 	vk::ShaderModule shader_module;
-	try {
-		shader_module = createShaderModuleFromFile(m_device, "shaders/comp.spv");
+	auto result = createShaderModuleFromFile(m_device, "shaders/comp.spv");
+	if (result.result != vk::Result::eSuccess) {
+		TRACE_FULL("Unable to load specified shader.");
+		return result.result;
 	}
-	catch (const std::runtime_error& e) {
-		TRACE_FULL(e.what());
-		return vk::Result::eIncomplete;
-	}
-
+	shader_module = result.value;
+	
 	vk::DescriptorSetLayoutBinding layoutBindings[3] = {
 		vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute),
 		vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute),
@@ -217,6 +222,8 @@ vk::Result VulkanComputeApplication::createPipeline() {
 		TRACE_FULL("unable to create compute pipeline");
 		return vk::Result::eErrorInitializationFailed;
 	}
+
+	m_device.destroyShaderModule(shader_module);
 
 	return vk::Result::eSuccess;
 }
@@ -302,8 +309,8 @@ void VulkanComputeApplication::fillInputBuffersRandom() {
 		TRACE_FULL("unable to map buffer");
 		return;
 	}
-	float* mappedA = (float *)m_inputBufferA.mapped;
-	float* mappedB = (float *)m_inputBufferB.mapped;
+	float* mappedA = (float *)m_inputBufferA.mapped();
+	float* mappedB = (float *)m_inputBufferB.mapped();
 	
 	std::random_device rand;
 	std::mt19937 gen(rand());
@@ -326,7 +333,7 @@ std::vector<float> VulkanComputeApplication::getResult() {
 		TRACE_FULL("unable to map buffer");
 		return std::vector<float>();
 	}
-	float* mappedOut = (float *)m_outputBuffer.mapped;
+	float* mappedOut = (float *)m_outputBuffer.mapped();
 	std::vector<float> result(m_numElements);
 	for (uint32_t i = 0; i < m_numElements; i++) {
 		result[i] = mappedOut[i];
@@ -354,16 +361,23 @@ static std::vector<char> readFile(const std::string& filename) {
 	return buffer;
 }
 
-vk::ShaderModule createShaderModuleFromFile(const vk::Device &device, const std::string &file) {
-	return createShaderModule(device, readFile(file));
+vk::ResultValue<vk::ShaderModule> createShaderModuleFromFile(const vk::Device &device, const std::string &file) {
+	try {
+		return createShaderModule(device, readFile(file));
+	}
+	catch (const std::runtime_error& e) {
+		TRACE_FULL(e.what());
+		return vk::ResultValue<vk::ShaderModule>(vk::Result::eIncomplete, vk::ShaderModule());
+	}
 }
 
-vk::ShaderModule createShaderModule(const vk::Device &device, const std::vector<char>& code) {
+vk::ResultValue<vk::ShaderModule> createShaderModule(const vk::Device &device, const std::vector<char>& code) {
 	vk::ShaderModuleCreateInfo createInfo = vk::ShaderModuleCreateInfo()
 		.setCodeSize(code.size())
 		.setPCode(reinterpret_cast<const uint32_t*>(code.data()));
-
-	return device.createShaderModule(createInfo);
+	vk::ShaderModule module;
+	vk::Result result = device.createShaderModule(&createInfo, nullptr, &module);
+	return vk::ResultValue<vk::ShaderModule>(result, module);
 }
 
 vk::ResultValue<uint32_t> findMemoryTypeIndex(vk::PhysicalDevice device, vk::DeviceSize size, vk::MemoryPropertyFlags flags) {

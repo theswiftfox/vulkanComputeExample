@@ -11,8 +11,8 @@ std::vector<const char*> getRequiredExtensions();
 std::vector<char> readFile(const std::string& filename);
 vk::ResultValue<uint32_t> findQueueFamilyIndex(vk::PhysicalDevice device);
 bool checkValidationLayerSupport(const std::vector<const char*> &validationLayers);
-vk::ShaderModule createShaderModule(const vk::Device &device, const std::vector<char>& code);
-vk::ShaderModule createShaderModuleFromFile(const vk::Device &device, const std::string &file);
+vk::ResultValue<vk::ShaderModule> createShaderModule(const vk::Device &device, const std::vector<char>& code);
+vk::ResultValue<vk::ShaderModule> createShaderModuleFromFile(const vk::Device &device, const std::string &file);
 bool isDeviceSuitable(vk::PhysicalDevice device, std::vector<std::string> requiredExtensions);
 bool checkDeviceExtensionSupport(vk::PhysicalDevice device, std::vector<std::string> requiredExtensions);
 vk::ResultValue<uint32_t> findMemoryTypeIndex(vk::PhysicalDevice device, vk::DeviceSize size, vk::MemoryPropertyFlags flags = vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -82,6 +82,7 @@ private:
 	std::vector<std::string> m_requiredExtensions;
 
 	vk::DeviceMemory m_valuesBufferMemory;
+	vkExt::SharedMemory m_sharedBufferMemory;
 	vkExt::Buffer m_inputBufferA;
 	vkExt::Buffer m_inputBufferB;
 	vkExt::Buffer m_outputBuffer;

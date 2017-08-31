@@ -1,0 +1,1 @@
+Do not build 32 bit or the vulkan driver wont intialize!

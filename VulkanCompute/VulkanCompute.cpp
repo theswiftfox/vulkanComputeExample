@@ -168,7 +168,7 @@ vk::Result VulkanComputeApplication::createBuffers() {
 
 vk::Result VulkanComputeApplication::createPipeline() {
 	vk::ShaderModule shader_module;
-	auto result = createShaderModuleFromFile(m_device, "shaders/comp.spv");
+	auto result = createShaderModuleFromFile(m_device, "shaders/glsl_shader.spv");
 	if (result.result != vk::Result::eSuccess) {
 		TRACE_FULL("Unable to load specified shader.");
 		return result.result;

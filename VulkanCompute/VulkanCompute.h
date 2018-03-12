@@ -8,7 +8,7 @@
 #include "Helpers.h"
 
 std::vector<const char*> getRequiredExtensions();
-std::vector<char> readFile(const std::string& filename);
+static std::vector<char> readFile(const std::string& filename);
 vk::ResultValue<uint32_t> findQueueFamilyIndex(vk::PhysicalDevice device);
 bool checkValidationLayerSupport(const std::vector<const char*> &validationLayers);
 vk::ResultValue<vk::ShaderModule> createShaderModule(const vk::Device &device, const std::vector<char>& code);
